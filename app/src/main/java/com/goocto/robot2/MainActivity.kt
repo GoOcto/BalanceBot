@@ -1,3 +1,21 @@
+/**
+ * Connects to an Arduino compatible device over USB and establishes communication.
+ * Sends accelerometer and gyro data as quickly as it can be accumulated.
+ * Uses a very simple protocol:
+ *
+ *  "Z" + Accel.as2Bytes() + Gyros.as2Bytes()
+ *  - Accel data is multiplied by 1000 so 1 G is roughly 9810 units
+ *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
+ *
+ *  or the following Strings:
+ *  "HIGH"   put the internal LED into HIGH mode  (may be either On or OFF depending on Arduino model)
+ *  "LOW"    put the internal LED into LOW mode
+ *  "READ"   requests a test data packet back from Arduino
+ *
+ *  All messages must end with "\n" to signal the end of a single transmission
+ *  The Arduino interprets everything between "\n" and the next "\n" as a complete message
+ */
+
 package com.goocto.balancebot
 
 import android.content.*
@@ -40,6 +58,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     lateinit var mBtnLow:View
     lateinit var mBtnHigh:View
 
+    private var mAccel = 0
+    private var mGyros = 0
+
     val sensorManager: SensorManager by lazy {
         getSystemService(Context.SENSOR_SERVICE) as SensorManager
     }
@@ -74,17 +95,34 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             Sensor.TYPE_ACCELEROMETER -> {
                 // event.values[0],[1],[2]
-                val n = Math.floor( event.values[1]*1000.0 ).toInt()
-                val msg = ( "\nA=".toByteArray() + intAsBytes(n) + "\n".toByteArray() )
-                if ( sPortReady ) sPort.write(msg,100)
+                // we only need the Y axis
+                mAccel = Math.floor( event.values[1]*1000.0 ).toInt()
+                // just store it for now, and transmit it with the Gyros data
             }
             Sensor.TYPE_GYROSCOPE -> {
                 // event.values[0],[1],[2]
-                val n = Math.floor( event.values[1]*1000.0 ).toInt()
-                val msg = ( "\nG=".toByteArray() + intAsBytes(n) + "\n".toByteArray() )
+                // we only need the Y axis
+                mGyros = Math.floor( event.values[1]*1000.0 ).toInt()
+                val msg = "Z".toByteArray()+as2Bytes(mAccel)+as2Bytes(mGyros)+"\n".toByteArray()
                 if ( sPortReady ) sPort.write(msg,100)
+                Log.d(TAG,"Sending sensor data: "+bytes2Hex(msg))
             }
         }
+    }
+
+    fun bytes2Hex(bytes:ByteArray):String {
+        var out = ""
+        for ( b in bytes ) {
+            out += String.format("%02X ",b)
+        }
+        return out
+    }
+
+    fun as2Bytes(n:Int):ByteArray {
+        val b = ByteBuffer.allocate(2)
+        b.put( (n/256).toByte() )
+        b.put( (n%256).toByte() )
+        return b.array()
     }
 
     fun intAsBytes(n:Int):ByteArray {
@@ -222,16 +260,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         registerReceiver(mBroadcastReceiver, filter)
 
         // uncomment the sensors when we are ready for the next step
-//        sensorManager.registerListener(
-//            this,
-//            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
-//            SensorManager.SENSOR_DELAY_FASTEST
-//        )
-//        sensorManager.registerListener(
-//            this,
-//            sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE),
-//            SensorManager.SENSOR_DELAY_FASTEST
-//        )
+        sensorManager.registerListener(
+            this,
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
+            SensorManager.SENSOR_DELAY_GAME   // UI:slow, GAME:~60fps, FASTEST:0ms delay
+        )
+        sensorManager.registerListener(
+            this,
+            sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE),
+            SensorManager.SENSOR_DELAY_GAME
+        )
 
         checkDevices() // will beginRobotBusiness() if it finds a device
     }

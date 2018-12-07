@@ -1,21 +1,21 @@
 /**
  * This Arduino code will receive messages from the BalanceBot Android app
  * 
- * for now, it is only in test mode, functionality is limited
+ * see MainActivity.kt file for an explanation of the protocol
+ * 
+ * Maximum length of a message is currently 5 bytes (+null), 
+ * but we might add more to the protocol
  */
-
 
 #define MAXLEN 8
 
-char inputString[MAXLEN] = "";  // should only need 4 so far, but we might add more to the protocol
-int expectDataType = 0;         // 0: expect ASCI, 1: expect AccelData, 2: expect GyrosData
+char inputString[MAXLEN] = "";  //
 
 char* inPtr = inputString;
 
 const int ledPin = LED_BUILTIN; // will depend on board
-int32_t accelData;
-int32_t gyrosData;
-
+int16_t accelData;
+int16_t gyrosData;
 
 
 void setup() {
@@ -31,37 +31,27 @@ void setup() {
     digitalWrite(ledPin, LOW);
     delay(50);
   }
+
   Serial.print("Ready to go on pin ");
   Serial.println(LED_BUILTIN);
   
 }
 
 
-
-int32_t inputStringAsIntBytes() {
-
-  int32_t v = 0;
-  v  = inputString[0] << 24;
-  v += inputString[1] << 16;
-  v += inputString[2] <<  8;
-  v += inputString[3];
-  
-  return v;
+void interpretSensorData() {
+  // inputString[0] is 'Z'
+  accelData = (inputString[1]<<8) + inputString[2];
+  gyrosData = (inputString[3]<<8) + inputString[4];
 }
 
 
-
-void handleASCII() {
+void handleInputString() {
 
     // this might be slow, but it's good for now
     switch ( inputString[0] ) {
 
-      case 'A':
-        expectDataType = 1;
-        break;
-
-      case 'G':
-        expectDataType = 2;
+      case 'Z':
+        interpretSensorData()
         break;
 
       default:
@@ -75,35 +65,8 @@ void handleASCII() {
         else if ( strcmp(inputString,"READ")==0 ) {
             Serial.println("Message from Arduino");
         }
-      
     }
-    
 }
-
-
-void handleInputString() {
-  
-    switch ( expectDataType ) {
-
-      case 1:
-        accelData = inputStringAsIntBytes();
-        expectDataType = 0;
-        break;
-        
-      case 2:
-        gyrosData = inputStringAsIntBytes();
-        expectDataType = 0;
-        break;
-        
-      default: // should be 0! but we catch everything 
-        handleASCII();
-        break;
-
-    }
-
-}
-
-
 
 
 void loop() {
