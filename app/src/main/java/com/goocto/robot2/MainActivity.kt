@@ -75,13 +75,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             Sensor.TYPE_ACCELEROMETER -> {
                 // event.values[0],[1],[2]
                 val n = Math.floor( event.values[1]*1000.0 ).toInt()
-                val msg = ( "\nA=".toByteArray() + intAsBytes(n) )
+                val msg = ( "\nA=".toByteArray() + intAsBytes(n) + "\n".toByteArray() )
                 if ( sPortReady ) sPort.write(msg,100)
             }
             Sensor.TYPE_GYROSCOPE -> {
                 // event.values[0],[1],[2]
                 val n = Math.floor( event.values[1]*1000.0 ).toInt()
-                val msg = ( "\nG=".toByteArray() + intAsBytes(n) )
+                val msg = ( "\nG=".toByteArray() + intAsBytes(n) + "\n".toByteArray() )
                 if ( sPortReady ) sPort.write(msg,100)
             }
         }
