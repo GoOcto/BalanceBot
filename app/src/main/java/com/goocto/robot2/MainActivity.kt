@@ -3,12 +3,12 @@
  * Sends accelerometer and gyro data as it is accumulated.
  * Uses a very simple protocol:
  *
- *  efficient sensor info:
+ *  efficient sensor info: (5 chars (bytes) each)
  *  "U" + Accel.asInt16 + Gyros.asInt16  on the X axis
  *  "V" + Accel.asInt16 + Gyros.asInt16  on the Y axis, this is the most important one for balancing
  *  "W" + Accel.asInt16 + Gyros.asInt16  on the Z axis
  *
- *  human readable sensor info: (easier for testing, see below for format)
+ *  human readable sensor info: (easier for testing, see below for format) (13 chars (bytes) each)
  *  "X" + human readable Accel data + human readable Gyros data on the X axis
  *  "Y" + human readable Accel data + human readable Gyros data on the Y axis
  *  "Z" + human readable Accel data + human readable Gyros data on the Z axis
@@ -25,7 +25,7 @@
  *  The Arduino interprets everything between "\n" and the next "\n" as a complete message
  *
  *  The human readable data must be in the form:
- *  ±NNNNNN  where the values range between -32768..+32767 (an int16) an N must be digits 0..9
+ *  ±NNNNNN  where N must be digits 0..9 and the values range between -32768..+32767 (an int16)
  *
  *  Notice that the first character of each signal is unique.
  */
@@ -121,17 +121,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                 // Most of the time, we only need to send the Y-axis
 
-                var msgX = "X".toByteArray()
+                var msgX = "U".toByteArray()
                 msgX += as2Bytes( sensorValueAsInt1000(mAccel[0]) )
                 msgX += as2Bytes( sensorValueAsInt1000(mGyros[0]) )
                 protocolSend(msgX)
 
-                var msgY = "Y".toByteArray()
+                var msgY = "V".toByteArray()
                 msgY += as2Bytes( sensorValueAsInt1000(mAccel[1]) )
                 msgY += as2Bytes( sensorValueAsInt1000(mGyros[1]) )
                 protocolSend(msgY)
 
-                var msgZ = "Z".toByteArray()
+                var msgZ = "W".toByteArray()
                 msgZ += as2Bytes( sensorValueAsInt1000(mAccel[2]) )
                 msgZ += as2Bytes( sensorValueAsInt1000(mGyros[2]) )
                 protocolSend(msgZ)
@@ -166,8 +166,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val b = ByteBuffer.allocate(2)
         val s = if ( n>=0 ) 0x00 else 0x80
         val v = if ( n>=0 ) n else -n
-        b.put( (s + v/256).toByte() )
-        b.put( (    v%256).toByte() )
+        b.put( (s + (v/256).toInt() ).toByte() )
+        b.put( (    (v%256).toInt() ).toByte() )
         return b.array()
     }
 
