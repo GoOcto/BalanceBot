@@ -31,6 +31,6 @@
     <!--&lt;!&ndash; 0x0403 / 0x6001: OSEPP Micro &ndash;&gt;-->
     <!--<usb-device vendor-id="1027" product-id="24577" />-->
 
-    <!--<usb-device />-->
+    <usb-device />
 
 </resources>

@@ -16,24 +16,29 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-
             <!--<intent-filter>-->
-                <!--<action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />-->
+            <!--<action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />-->
             <!--</intent-filter>-->
             <!--<intent-filter>-->
-                <!--<action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />-->
+            <!--<action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />-->
             <!--</intent-filter>-->
 
             <!--<meta-data-->
-                    <!--android:name="android.hardware.usb.action.USB_DEVICE_DETACHED"-->
-                    <!--android:resource="@xml/device_filter" />-->
+            <!--android:name="android.hardware.usb.action.USB_DEVICE_DETACHED"-->
+            <!--android:resource="@xml/device_filter" />-->
             <!--<meta-data-->
-                    <!--android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"-->
-                    <!--android:resource="@xml/device_filter" />-->
+            <!--android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"-->
+            <!--android:resource="@xml/device_filter" />-->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
+            </intent-filter>
+            <meta-data
+                    android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                    android:resource="@xml/device_filter"/>
         </activity>
     </application>
 
-    <uses-feature android:name="android.hardware.usb.host" />
-    <uses-permission android:name="android.permission.USB_PERMISSION" />
+    <uses-feature android:name="android.hardware.usb.host"/>
+    <uses-permission android:name="android.permission.USB_PERMISSION"/>
 
 </manifest>
