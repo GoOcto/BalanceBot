@@ -3,7 +3,16 @@
  * Sends accelerometer and gyro data as it is accumulated.
  * Uses a very simple protocol:
  *
- *  "Z" + Accel.as2Bytes() + Gyros.as2Bytes()
+ *  efficient sensor info:
+ *  "U" + Accel.asInt16 + Gyros.asInt16  on the X axis
+ *  "V" + Accel.asInt16 + Gyros.asInt16  on the Y axis, this is the most important one for balancing
+ *  "W" + Accel.asInt16 + Gyros.asInt16  on the Z axis
+ *
+ *  human readable sensor info: (easier for testing, see below for format)
+ *  "X" + human readable Accel data + human readable Gyros data on the X axis
+ *  "Y" + human readable Accel data + human readable Gyros data on the Y axis
+ *  "Z" + human readable Accel data + human readable Gyros data on the Z axis
+ *
  *  - Accel data is multiplied by 1000 so 1 G is roughly 9810 units
  *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
  *
@@ -14,6 +23,11 @@
  *
  *  All messages must end with "\n" to signal the end of a single transmission
  *  The Arduino interprets everything between "\n" and the next "\n" as a complete message
+ *
+ *  The human readable data must be in the form:
+ *  ±NNNNNN  where the values range between -32768..+32767 (an int16) an N must be digits 0..9
+ *
+ *  Notice that the first character of each signal is unique.
  */
 
 package com.goocto.balancebot
@@ -58,8 +72,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     lateinit var mBtnLow:View
     lateinit var mBtnHigh:View
 
-    private var mAccel = 0
-    private var mGyros = 0
+    private var mAccel = floatArrayOf(0f,0f,0f)
+    private var mGyros = floatArrayOf(0f,0f,0f)
 
     val sensorManager: SensorManager by lazy {
         getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -96,21 +110,51 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             Sensor.TYPE_ACCELEROMETER -> {
                 // event.values[0],[1],[2]
                 // we only need the Y axis
-                mAccel = Math.floor( event.values[1]*1000.0 ).toInt()
+                mAccel = event.values
+
                 // just store it for now, and transmit it with the Gyros data
             }
             Sensor.TYPE_GYROSCOPE -> {
                 // event.values[0],[1],[2]
                 // we only need the Y axis
-                mGyros = Math.floor( event.values[1]*1000.0 ).toInt()
-                val msg = "Z".toByteArray()+as2Bytes(mAccel)+as2Bytes(mGyros)+"\n".toByteArray()
-                if ( sPortReady ) sPort.write(msg,100)
-                Log.d(TAG,"Sending sensor data: "+bytes2Hex(msg))
+                mGyros = event.values
+
+                // Most of the time, we only need to send the Y-axis
+
+                var msgX = "X".toByteArray()
+                msgX += as2Bytes( sensorValueAsInt1000(mAccel[0]) )
+                msgX += as2Bytes( sensorValueAsInt1000(mGyros[0]) )
+                protocolSend(msgX)
+
+                var msgY = "Y".toByteArray()
+                msgY += as2Bytes( sensorValueAsInt1000(mAccel[1]) )
+                msgY += as2Bytes( sensorValueAsInt1000(mGyros[1]) )
+                protocolSend(msgY)
+
+                var msgZ = "Z".toByteArray()
+                msgZ += as2Bytes( sensorValueAsInt1000(mAccel[2]) )
+                msgZ += as2Bytes( sensorValueAsInt1000(mGyros[2]) )
+                protocolSend(msgZ)
+
             }
         }
     }
 
-    fun bytes2Hex(bytes:ByteArray):String {
+    fun protocolSend(msg:String) {
+        protocolSend(msg.toByteArray())
+    }
+
+    fun protocolSend(bytes:ByteArray) {
+        val send = bytes+"\n".toByteArray()
+        if ( sPortReady ) sPort.write(send,100)
+        Log.d(TAG,"PROTOCOL SEND: "+send)
+    }
+
+    fun sensorValueAsInt1000 (f:Float):Int {
+        return Math.floor( f*1000.0 ).toInt()
+    }
+
+    fun bytesToHex(bytes:ByteArray):String {
         var out = ""
         for ( b in bytes ) {
             out += String.format("%02X ",b)
@@ -120,8 +164,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     fun as2Bytes(n:Int):ByteArray {
         val b = ByteBuffer.allocate(2)
-        b.put( (n/256).toByte() )
-        b.put( (n%256).toByte() )
+        val s = if ( n>=0 ) 0x00 else 0x80
+        val v = if ( n>=0 ) n else -n
+        b.put( (s + v/256).toByte() )
+        b.put( (    v%256).toByte() )
         return b.array()
     }
 
@@ -138,10 +184,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         var Msg = ""
         for ( (k,v) in deviceList ) {
-            Msg += v.manufacturerName  + " : " + v.productName + "\n"
+            Msg += v.manufacturerName!!  + " : " + v.productName + "\n"
 
             Log.d(TAG,v.toString())
 
+            // these should probably be moved to the manifest
+            // they're here for now, for development
             if ( v.vendorId==0x0403 && v.productId==0x6001 ) foundRobot = true // FTDI FT232R UART (OSEPP Micro)
             if ( v.vendorId==0x10C4 && v.productId==0xEA60 ) foundRobot = true // CP210x UART Bridge (NodeMCU)
             if ( v.vendorId==0x1ffb && v.productId==0x2300 ) foundRobot = true // Pololu AStar32U4
@@ -200,7 +248,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             sPort.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
 
             // send our first message to our Robot
-            sPort.write("\nREAD\n".toByteArray(),100)
+            protocolSend("READ")
 
         } catch (e: IOException) {
             // Deal with error.
@@ -286,12 +334,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
 
     fun sendHigh(view:View) {
-        if ( sPortReady ) sPort.write("HIGH\n".toByteArray(),100)
+        protocolSend("HIGH")
     }
 
 
     fun sendLow(view:View) {
-        if ( sPortReady ) sPort.write("LOW\n".toByteArray(),100)
+        protocolSend("LOW")
     }
 
 
