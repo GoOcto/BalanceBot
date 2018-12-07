@@ -424,7 +424,11 @@ public class CdcAcmSerialDriver implements UsbSerialDriver {
                 });
         supportedDevices.put(Integer.valueOf(UsbId.VENDOR_LEAFLABS),
                 new int[] {
-                    UsbId.LEAFLABS_MAPLE,
+                        UsbId.LEAFLABS_MAPLE,
+                });
+        supportedDevices.put(Integer.valueOf(UsbId.VENDOR_POLOLU),
+                new int[] {
+                        UsbId.POLOLU_ASTAR32U4,
                 });
         return supportedDevices;
     }
