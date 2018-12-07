@@ -1,6 +1,6 @@
 /**
  * Connects to an Arduino compatible device over USB and establishes communication.
- * Sends accelerometer and gyro data as quickly as it can be accumulated.
+ * Sends accelerometer and gyro data as it is accumulated.
  * Uses a very simple protocol:
  *
  *  "Z" + Accel.as2Bytes() + Gyros.as2Bytes()
@@ -8,8 +8,8 @@
  *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
  *
  *  or the following Strings:
- *  "HIGH"   put the internal LED into HIGH mode  (may be either On or OFF depending on Arduino model)
- *  "LOW"    put the internal LED into LOW mode
+ *  "HIGH"   put the Arduino's internal LED into HIGH mode  (may be either On or OFF depending on Arduino model)
+ *  "LOW"    put the Arduino's internal LED into LOW mode
  *  "READ"   requests a test data packet back from Arduino
  *
  *  All messages must end with "\n" to signal the end of a single transmission
