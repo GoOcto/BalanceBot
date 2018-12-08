@@ -1,33 +1,10 @@
 /**
  * Connects to an Arduino compatible device over USB and establishes communication.
  * Sends accelerometer and gyro data as it is accumulated.
- * Uses a very simple protocol:
+ * Uses a very simple protocol. See the Arduino program file for protocol specifics.
  *
- *  efficient sensor info: (5 chars (bytes) each)
- *  "U" + Accel.asInt16 + Gyros.asInt16  on the X axis
- *  "V" + Accel.asInt16 + Gyros.asInt16  on the Y axis, this is the most important one for balancing
- *  "W" + Accel.asInt16 + Gyros.asInt16  on the Z axis
- *
- *  human readable sensor info: (easier for testing, see below for format) (13 chars (bytes) each)
- *  "X" + human readable Accel data + human readable Gyros data on the X axis
- *  "Y" + human readable Accel data + human readable Gyros data on the Y axis
- *  "Z" + human readable Accel data + human readable Gyros data on the Z axis
- *
- *  - Accel data is multiplied by 1000 so 1 G is roughly 9810 units
- *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
- *
- *  or the following Strings:
- *  "HIGH"   put the Arduino's internal LED into HIGH mode  (may be either On or OFF depending on Arduino model)
- *  "LOW"    put the Arduino's internal LED into LOW mode
- *  "READ"   requests a test data packet back from Arduino
- *
- *  All messages must end with "\n" to signal the end of a single transmission
- *  The Arduino interprets everything between "\n" and the next "\n" as a complete message
- *
- *  The human readable data must be in the form:
- *  ±NNNNNN  where N must be digits 0..9 and the values range between -32768..+32767 (an int16)
- *
- *  Notice that the first character of each signal is unique.
+ * Built and Programmed by the LogicalOctopus
+ * On Github at https://github.com/GoOcto/BalanceBot
  */
 
 package com.goocto.balancebot
@@ -121,21 +98,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                 // Most of the time, we only need to send the Y-axis
 
-                var msgX = "U".toByteArray()
-                msgX += as2Bytes( sensorValueAsInt1000(mAccel[0]) )
-                msgX += as2Bytes( sensorValueAsInt1000(mGyros[0]) )
-                protocolSend(msgX)
+//                var msgX = "U".toByteArray()
+//                msgX += as2Bytes( sensorValueAsInt1000(mAccel[0]) )
+//                msgX += as2Bytes( sensorValueAsInt1000(mGyros[0]) )
+//                protocolSend(msgX)
+//
+                var msgV = "V".toByteArray()
+                msgV += as2Bytes( sensorValueAsInt1000(mAccel[1]) )
+                msgV += as2Bytes( sensorValueAsInt1000(mGyros[1]) )
+                protocolSend(msgV)
+//
+//                var msgZ = "W".toByteArray()
+//                msgZ += as2Bytes( sensorValueAsInt1000(mAccel[2]) )
+//                msgZ += as2Bytes( sensorValueAsInt1000(mGyros[2]) )
+//                protocolSend(msgZ)
 
-                var msgY = "V".toByteArray()
-                msgY += as2Bytes( sensorValueAsInt1000(mAccel[1]) )
-                msgY += as2Bytes( sensorValueAsInt1000(mGyros[1]) )
-                protocolSend(msgY)
-
-                var msgZ = "W".toByteArray()
-                msgZ += as2Bytes( sensorValueAsInt1000(mAccel[2]) )
-                msgZ += as2Bytes( sensorValueAsInt1000(mGyros[2]) )
-                protocolSend(msgZ)
-
+//                var msgY = "Y".toByteArray()
+//                msgY += asHumanReadable( sensorValueAsInt1000(mAccel[1]) )
+//                msgY += asHumanReadable( sensorValueAsInt1000(mGyros[1]) )
+//                protocolSend(msgY)
             }
         }
     }
@@ -146,8 +127,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     fun protocolSend(bytes:ByteArray) {
         val send = bytes+"\n".toByteArray()
-        if ( sPortReady ) sPort.write(send,100)
-        Log.d(TAG,"PROTOCOL SEND: "+send)
+        if ( sPortReady ) {
+            try {
+                // it might try to write again, before elgantly closing the port
+                sPort.write(send, 100)
+                Log.d(TAG, "PROTOCOL SEND: " + send)
+            }
+            catch(e:Exception) {
+                // don't make a big deal out of it
+                //sPort.close()
+            }
+        }
     }
 
     fun sensorValueAsInt1000 (f:Float):Int {
@@ -160,6 +150,29 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             out += String.format("%02X ",b)
         }
         return out
+    }
+
+    fun asHumanReadable(n:Int):ByteArray {
+        // ±NNNNNN
+        var b = ByteBuffer.allocate(6)
+        var v = 0
+
+        if ( n>=0 ) {
+            b.put( '+'.toByte() )
+            v = n
+        }
+        else {
+            b.put( '-'.toByte() )
+            v = -n
+        }
+
+        b.put( ('0' + (v/10000)%10).toByte() )
+        b.put( ('0' + (v/1000)%10).toByte() )
+        b.put( ('0' + (v/100)%10).toByte() )
+        b.put( ('0' + (v/10)%10).toByte() )
+        b.put( ('0' + (v/1)%10).toByte() )
+
+        return b.array()
     }
 
     fun as2Bytes(n:Int):ByteArray {
@@ -247,6 +260,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             sPort.open(connection)
             sPort.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
 
+
+            Log.d(TAG,"DTR = "+ (if (sPort.dtr) "1" else "0" ) )
+            Log.d(TAG,"RTS = "+ (if (sPort.rts) "1" else "0" ) )
+
+            sPort.setDTR(true)
+
             // send our first message to our Robot
             protocolSend("READ")
 
@@ -277,7 +296,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mBtnHigh.visibility = View.INVISIBLE
             mBtnLow.visibility = View.INVISIBLE
         }
-        sPortReady = false
+        if ( sPortReady ) {
+            sPort.setDTR(false)
+            sPort.close()
+            sPortReady = false
+        }
     }
 
 
@@ -311,7 +334,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.registerListener(
             this,
             sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
-            SensorManager.SENSOR_DELAY_GAME   // UI:slow, GAME:~60fps, FASTEST:0ms delay
+            SensorManager.SENSOR_DELAY_GAME   // UI:slow(~16fps), GAME:(~50fps), FASTEST:(~500fps)
         )
         sensorManager.registerListener(
             this,
