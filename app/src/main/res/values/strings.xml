@@ -3,4 +3,5 @@
     <string name="high">HIGH</string>
     <string name="low">LOW</string>
     <string name="no_device_found">No device found</string>
+    <string name="text_view">text view</string>
 </resources>

@@ -87,9 +87,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 // save this info until we read the gyros
                 mAccel = event.values
 
-
             }
-            Sensor.TYPE_GYROSCOPE_UNCALIBRATED -> {
+            Sensor.TYPE_GYROSCOPE -> {
                 // event.values[0],[1],[2]
                 // we only need the Y axis
                 mGyros = event.values
@@ -135,23 +134,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         //val textView = findViewById(R.id.text_view) as TextView
         var foundRobot = false
 
-        var Msg = ""
+        var msg = ""
         for ( (k,v) in deviceList ) {
-            Msg += v.manufacturerName!!  + " : " + v.productName + "\n"
-
+            msg += v.manufacturerName!!  + " : " + v.productName + "\n"
             Log.d(TAG,v.toString())
-
-//            // these should probably be moved to the manifest
-//            // they're here for now, for development
-//            if ( v.vendorId==0x0403 && v.productId==0x6001 ) foundRobot = true // FTDI FT232R UART (OSEPP Micro)
-//            if ( v.vendorId==0x10C4 && v.productId==0xEA60 ) foundRobot = true // CP210x UART Bridge (NodeMCU)
-//            if ( v.vendorId==0x1ffb && v.productId==0x2300 ) foundRobot = true // Pololu AStar32U4
-//            if ( v.vendorId==0x2341 && v.productId==0x0043 ) foundRobot = true // Arduino Uno
+            foundRobot = true
         }
 
-        if ( Msg.length == 0 ) Msg = "No devices found"
-        text_view.text = Msg
-        Log.d(TAG,Msg)
+        if ( !foundRobot ) msg = "No devices found"
+        text_view.text = msg
+        Log.d(TAG,msg)
 
         if ( foundRobot ) startRobotCommunication()
         else              endRobotCommunication()
@@ -290,7 +282,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         )
         sensorManager.registerListener(
             this,
-            sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE_UNCALIBRATED),
+            sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE),
             SensorManager.SENSOR_DELAY_GAME
         )
 
@@ -301,7 +293,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
 
         unregisterReceiver(mBroadcastReceiver)
-
         sensorManager.unregisterListener(this)
 
         endRobotCommunication()
