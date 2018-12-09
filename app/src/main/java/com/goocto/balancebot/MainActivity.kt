@@ -91,7 +91,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                 // just store it for now, and transmit it with the Gyros data
             }
-            Sensor.TYPE_GYROSCOPE -> {
+            Sensor.TYPE_GYROSCOPE_UNCALIBRATED -> {
                 // event.values[0],[1],[2]
                 // we only need the Y axis
                 mGyros = event.values
@@ -219,7 +219,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
 
     fun updateReceivedData(data:ByteArray) {
-        Log.d(TAG,"RECEIVED DATA: " + data.toString(Charsets.US_ASCII) )
+        Log.d("ARDUINO SERIAL RECV",data.toString(Charsets.US_ASCII) )
 
         findViewById<TextView>(R.id.data_view).append(  data.toString(Charsets.US_ASCII) )
         findViewById<ScrollView>(R.id.scroll_view).fullScroll(View.FOCUS_DOWN)
@@ -338,7 +338,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         )
         sensorManager.registerListener(
             this,
-            sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE),
+            sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE_UNCALIBRATED),
             SensorManager.SENSOR_DELAY_GAME
         )
 

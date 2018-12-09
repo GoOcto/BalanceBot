@@ -65,6 +65,9 @@
 int32_t driveL;
 int32_t driveR;
 
+Motors motors(MMD,AEN,APH,BEN,BPH);
+
+
 // Pin Mappings for Encoders (xEA pin must be able to respond to a CHANGE Interrupt)
 #define REA   2
 #define REB   7
@@ -85,18 +88,27 @@ char zerosString[MAXLEN] = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0"; // "\0" at end implie
 
 char* inPtr = inputString;
 
-const int ledPin = LED_BUILTIN; // will depend on board
-
 int16_t accelData[3];  // in X, Y, Z axes
 int16_t gyrosData[3];  // in X, Y, Z axes
 
 
 
+// trackers for balancing
+int32_t rad2deg000 = 180000/3.14159265;
+int32_t angleAccel;
+int32_t angleGyro;
+int32_t risingAngleOffset;
+int32_t fallingAngleOffset;
+bool upright;
+
+int32_t lftS;
+int32_t lftD;
+int32_t rgtS;
+int32_t rgtD;
+int motorSpeed;
 
 
-Motors motors(MMD,AEN,APH,BEN,BPH);
 
-int motorSpeed[2];
 
 
 void doCountL() {
@@ -127,7 +139,7 @@ void doCountR() {
 void setup() {
   
   Serial.begin(115200);
-  pinMode(ledPin, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
   
   // set up encoders to count wheel movement
   pinMode(LEA,INPUT_PULLUP);
@@ -140,14 +152,11 @@ void setup() {
   delay(200);
 
   for (int i=0;i<10;i++) {
-    digitalWrite(ledPin, HIGH);
+    digitalWrite(LED_BUILTIN, HIGH);
     delay(50);
-    digitalWrite(ledPin, LOW);
+    digitalWrite(LED_BUILTIN, LOW);
     delay(50);
   }
-
-  Serial.print("Ready to go on pin ");
-  Serial.println(ledPin);
 
 }
 
@@ -200,10 +209,10 @@ void interpretHumanReadableSensorData(int i) {
 // -----------------------------------------------------------------------------------
 void interpretHumanReadableMotorData() {
   // incoming sensor data: M±AAA±GGG
-  motorSpeed[0] = Ascii4ToInt( inputString+1 );
-  motorSpeed[1] = Ascii4ToInt( inputString+5 );
+  int16_t mL = Ascii4ToInt( inputString+1 );
+  int16_t mR = Ascii4ToInt( inputString+5 );
+  balanceDrive(mL,mR);
 }
-
 
 // -----------------------------------------------------------------------------------
 void handleInputString() {
@@ -221,6 +230,7 @@ void handleInputString() {
         
       case 'V':
         interpretSensorData(1);
+        doBalanceLoop();
         break;
         
       case 'W':
@@ -229,8 +239,6 @@ void handleInputString() {
 
       case 'M':
         interpretHumanReadableMotorData();
-        motors.setLSpeed(motorSpeed[0]);
-        motors.setRSpeed(motorSpeed[1]);
         break;        
         
       case 'X':
@@ -239,6 +247,7 @@ void handleInputString() {
         
       case 'Y':
         interpretHumanReadableSensorData(1);
+        doBalanceLoop();
         break;
         
       case 'Z':
@@ -248,10 +257,10 @@ void handleInputString() {
       default:
         // these don't need to be fast
         if ( strcmp(inputString,"LOW")==0 ) {
-            digitalWrite(ledPin, LOW);
+            digitalWrite(LED_BUILTIN, LOW);
         }
         else if ( strcmp(inputString,"HIGH")==0 ) {
-            digitalWrite(ledPin, HIGH);
+            digitalWrite(LED_BUILTIN, HIGH);
         }
         else if ( strcmp(inputString,"READ")==0 ) {
             Serial.println("Message from Arduino");
@@ -264,9 +273,99 @@ void handleInputString() {
 
 
 // -----------------------------------------------------------------------------------
+void doBalance() {
+  
+  motorSpeed += (
+    + ANGLE_RESPONSE * risingAngleOffset
+    + DISTANCE_RESPONSE * (lftD+rgtD)
+    + SPEED_RESPONSE * (lftS+rgtS)
+    ) / 100 / GEAR_RATIO;
+
+  if (motorSpeed >  255)  motorSpeed =  255;
+  if (motorSpeed < -255)  motorSpeed = -255;
+
+  //motors.setSpeeds(
+  //  motorSpeed + (rgtD-lftD)/2,
+  //  motorSpeed + (lftD-rgtD)/2 );
+
+}
+
+// -----------------------------------------------------------------------------------
+void doResting() {
+  // Reset things so it doesn't go crazy.
+  motorSpeed = 0;
+  lftD = 0; lftS = 0;
+  rgtD = 0; rgtS = 0;
+  motors.setSpeeds(0, 0);
+
+  if ( gyrosData[1]>-60 && gyrosData[1]<60 )
+  {
+    // get our actual angle and reset the accumulated gyro
+    angleGyro = angleAccel;
+  } 
+  
+}
+
+// -----------------------------------------------------------------------------------
 void balanceDrive(int16_t motorL, int16_t motorR) {
   driveL = motorL;
   driveR = motorR;
+}
+
+// -----------------------------------------------------------------------------------
+void readSensors() {
+
+  // estimate our actual angle from the only know accelData
+  float ratio = accelData[1]/9810.f;
+  if ( ratio<-1 ) ratio = -1;
+  if ( ratio> 1 ) ratio =  1;
+  angleAccel = acos(ratio)*rad2deg000;
+  upright = ( angleAccel>-80000 && angleAccel<80000 );
+
+  // an estimated angle based on accumulated gyrosData
+  angleGyro += gyrosData[1];
+  angleGyro = angleGyro * 999 / 1000;
+
+  static int16_t prevCntL;
+  lftS = (countL - prevCntL);
+  lftD += countL - prevCntL;
+  prevCntL = countL;
+
+  static int16_t prevCntR;
+  rgtS = (countR - prevCntR);
+  rgtD += countR - prevCntR;
+  prevCntR = countR;
+
+  // update speed and distance by applying the requested speeds to the counters
+  lftD -= driveL;  lftS -= driveL;
+  rgtD -= driveR;  rgtS -= driveR;
+
+  risingAngleOffset  = gyrosData[1] * ANGLE_RATE_RATIO + angleGyro;
+  fallingAngleOffset = gyrosData[1] * ANGLE_RATE_RATIO - angleGyro;
+
+  static char buf[200];
+  snprintf_P(buf,sizeof(buf), PSTR("G, FAO: %06ld  %06ld  %06ld\n"),
+    (long)gyrosData[1], (long)angleGyro, (long)fallingAngleOffset);
+  Serial.println(buf);
+  
+}
+
+
+
+
+// -----------------------------------------------------------------------------------
+void doBalanceLoop(){
+  
+  // assumed to be ~once per 20ms
+  readSensors();
+
+  if ( upright )  {
+    doBalance();
+  }
+  else {
+    doResting();
+  }
+  
 }
 
 
@@ -298,13 +397,6 @@ void loop() {
       }
     }
 
-
   }
-
-  //Serial.print("counts: ");
-  //Serial.print(countL);
-  //Serial.print(", ");
-  //Serial.println(countR);
-  
 
 }
