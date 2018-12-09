@@ -8,24 +8,12 @@
  * 
  * Uses a very simple protocol:
  *
-// *  efficient sensor info: (5 chars (bytes) each)
-// *  "U" + Accel.asInt16 + Gyros.asInt16  on the X axis
-// *  "V" + Accel.asInt16 + Gyros.asInt16  on the Y axis, this is the most important one for balancing
-// *  "W" + Accel.asInt16 + Gyros.asInt16  on the Z axis
-// *
-// *  human readable sensor info: (easier for testing, see below for format) (13 chars (bytes) each)
-// *  "X" + human readable Accel data + human readable Gyros data on the X axis
-// *  "Y" + human readable Accel data + human readable Gyros data on the Y axis
-// *  "Z" + human readable Accel data + human readable Gyros data on the Z axis
-// *
-// *  - Accel data is multiplied by 1000 so 1 G is roughly 9810 units
-// *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
- *  "A±NNNNN" where NNNNN is angle in degrees*100 (eg. 9876 is 98.76°)
- *  "G±NNNNN" where NNNNN is the gyros value *1000 (eg. 
-
+ *  "A±NNNNN" to send Angle data where NNNNN is angle in degrees*100 (eg. 9876 is 98.76°)
+ *  "G±NNNNN" to send Gyros data where NNNNN is the gyros value *1000 (eg. 
  *  
- *  "M" + humanreadable motor data in Left, Right order (ie. M+200-050 sets the Left motor to forward at a PWM of 200/255 
- *            and the right motor to backward at a PWM of 50/255)
+ *  "M±NNN±NNN" to send Motors data, to be interpretted as a desire to move in a particular way
+ *              this is not direct motor control, it tells the balancing algorithm how we'd like to move
+ *              the values are expected PWM signals NNN/255
  *
  *  or the following Strings:
  *  "HIGH"   put the Arduino's internal LED into HIGH mode  (may be either On or OFF depending on Arduino model)
@@ -34,12 +22,6 @@
  *
  *  All messages must end with "\n" to signal the end of a single transmission
  *  The Arduino interprets everything between "\n" and the next "\n" as a complete message
- *
- *  The human readable data for sensors must be in the form:
- *  ±NNNNNN  where N must be digits 0..9 and the values range between -32768..+32767 (an int16)
- *  
- *  and for motors it is similar but shorter:
- *  ±NNN  where N must be digits 0..9 and the values range between -255..+255 (the min and max value for the motor PWM)
  *
  *  Notice that the first character of each signal is unique.
  */
@@ -72,7 +54,7 @@ int32_t driveR;
 Motors motors(MMD,AEN,APH,BEN,BPH);
 
 
-// Pin Mappings for Encoders (xEA pin must be able to respond to a CHANGE Interrupt)
+// Pin Mappings for Encoders (xEA pins must be able to respond to a CHANGE Interrupt)
 #define REA   2
 #define REB   7
 #define LEA   3
@@ -80,6 +62,18 @@ Motors motors(MMD,AEN,APH,BEN,BPH);
 
 volatile int32_t countL = 0;
 volatile int32_t countR = 0;
+
+void doCountL() { // called from an pin CHANGE interrupt
+  int a = digitalRead(LEA);
+  int b = digitalRead(LEB);
+  countL += (a==b) ? -1 : +1;
+}
+
+void doCountR() { // called from an pin CHANGE interrupt
+  int a = digitalRead(REA);
+  int b = digitalRead(REB);
+  countR += (a==b) ? +1 : -1;
+}
 
 
 
@@ -114,19 +108,6 @@ int motorSpeed;
 
 
 
-
-void doCountL() {
-  int a = digitalRead(LEA);
-  int b = digitalRead(LEB);
-  countL += (a==b) ? -1 : +1;
-}
-
-
-void doCountR() {
-  int a = digitalRead(REA);
-  int b = digitalRead(REB);
-  countR += (a==b) ? +1 : -1;
-}
 
 
 
@@ -164,67 +145,22 @@ void setup() {
 
 }
 
-
 // -----------------------------------------------------------------------------------
-int16_t Ascii6ToInt(char* str) {
-  // always 6 chars long including the sign
-  int16_t n=0;
+int32_t AsciiToInt(int ndigits, char* str) {
+  // str need to have length of ndigits +1 for the sign
+  int32_t n=0;
+  int m = 1;
+
   // interpret the digits
-  n += (str[1]-'0')*10000;
-  n += (str[2]-'0')*1000;
-  n += (str[3]-'0')*100;
-  n += (str[4]-'0')*10;
-  n += (str[5]-'0');
-  // now the sign
+  while ( ndigits>0 ) {
+    n += (str[ndigits]-'0') * m;
+    m *= 10;
+    ndigits--;
+  }
+  
+  // interpret the sign
   if ( str[0]=='-' ) n = -n;
   return n;
-}
-
-// -----------------------------------------------------------------------------------
-int16_t Ascii4ToInt(char* str) {
-  // always 4 chars long including the sign
-  int16_t n=0;
-  // interpret the digits
-  n += (str[1]-'0')*100;
-  n += (str[2]-'0')*10;
-  n += (str[3]-'0');
-  // now the sign
-  if ( str[0]=='-' ) n = -n;
-  return n;
-}
-
-//// -----------------------------------------------------------------------------------
-//void interpretSensorData(int i) {
-//  // inputString should be exactly 5 bytes long
-//  accelData[i] = ((inputString[1]&0x7f)<<8) + inputString[2];
-//  gyrosData[i] = ((inputString[3]&0x7f)<<8) + inputString[4];
-//
-//  if ( inputString[1]&0x80 ) accelData[i] = -accelData[i];
-//  if ( inputString[3]&0x80 ) gyrosData[i] = -gyrosData[i];
-//}
-
-//// -----------------------------------------------------------------------------------
-//void interpretHumanReadableSensorData(int i) {
-//  // incoming sensor data: Z±AAAAA±GGGGG
-//  accelData[i] = Ascii6ToInt( inputString+1 );
-//  gyrosData[i] = Ascii6ToInt( inputString+7 );
-//}
-
-// -----------------------------------------------------------------------------------
-void interpretAngleData(int i) {
-	angleData = 
-}
-
-// -----------------------------------------------------------------------------------
-void interpretGyrosData(int i) {
-}
-
-// -----------------------------------------------------------------------------------
-void interpretMotorData() {
-  // incoming sensor data: M±AAA±GGG
-  int16_t mL = Ascii4ToInt( inputString+1 );
-  int16_t mR = Ascii4ToInt( inputString+5 );
-  balanceDrive(mL,mR);
 }
 
 // -----------------------------------------------------------------------------------
@@ -238,52 +174,40 @@ void handleInputString() {
     switch ( inputString[0] ) {
 
       case 'A':
-        interpretAngleData();
+        // incoming angle data: A±NNNNN
+        // this is calced in the Android with atan2(accelZ,accelY)*180/PI
+        angleData = AsciiToInt( 5, inputString+1 );
         break;
         
       case 'G':
-        interpretGyrosData();
+        // incoming gyros data: G±NNNNN
+        gyrosData = AsciiToInt( 5, inputString+1 );
         doBalanceLoop();
         break;
-//        
-//      case 'W':
-//        interpretSensorData(2);
-//        break;
 
       case 'M':
-        interpretMotorData();
+        // incoming motors data: M±NNN±NNN
+        int16_t mL = AsciiToInt( 4, inputString+1 );
+        int16_t mR = AsciiToInt( 4, inputString+5 );
+        balanceDrive(mL,mR);
         break;        
-        
-//      case 'X':
-//        interpretHumanReadableSensorData(0);
-//        break;
-//        
-//      case 'Y':
-//        interpretHumanReadableSensorData(1);
-//        doBalanceLoop();
-//        break;
-//        
-//      case 'Z':
-//        interpretHumanReadableSensorData(2);
-//        break;
         
       default:
         // these don't need to be fast
         if ( strcmp(inputString,"LOW")==0 ) {
-            digitalWrite(LED_BUILTIN, LOW);
+          digitalWrite(LED_BUILTIN, LOW);
         }
         else if ( strcmp(inputString,"HIGH")==0 ) {
-            digitalWrite(LED_BUILTIN, HIGH);
+          digitalWrite(LED_BUILTIN, HIGH);
         }
         else if ( strcmp(inputString,"READ")==0 ) {
-            Serial.println("Message from Arduino");
+          Serial.println("Message acknowledge");
         }
         break;
         
     }
     
 }
-
 
 // -----------------------------------------------------------------------------------
 void doBalance() {
@@ -297,9 +221,9 @@ void doBalance() {
   if (motorSpeed >  255)  motorSpeed =  255;
   if (motorSpeed < -255)  motorSpeed = -255;
 
-  //motors.setSpeeds(
-  //  motorSpeed + (rgtD-lftD)/2,
-  //  motorSpeed + (lftD-rgtD)/2 );
+  motors.setSpeeds(
+    motorSpeed + (rgtD-lftD)/2,
+    motorSpeed + (lftD-rgtD)/2 );
 
 }
 
@@ -327,12 +251,6 @@ void balanceDrive(int16_t motorL, int16_t motorR) {
 
 // -----------------------------------------------------------------------------------
 void readSensors() {
-
-//  // estimate our actual angle from the only know accelData
-//  float ratio = accelData[1]/9810.f;
-//  if ( ratio<-1 ) ratio = -1;
-//  if ( ratio> 1 ) ratio =  1;
-//  angleAccel = acos(ratio)*rad2deg000;
 
   angleAccel = angleData + ANGLE_CALIBRATION; // straight across simple conversion
   upright = ( angleAccel>-80000 && angleAccel<80000 );
@@ -365,9 +283,6 @@ void readSensors() {
   
 }
 
-
-
-
 // -----------------------------------------------------------------------------------
 void doBalanceLoop(){
   
@@ -375,7 +290,7 @@ void doBalanceLoop(){
   readSensors();
 
   if ( upright )  {
-    doBalance();
+    //doBalance();
   }
   else {
     doResting();
@@ -383,12 +298,11 @@ void doBalanceLoop(){
   
 }
 
-
 // -----------------------------------------------------------------------------------
 void loop() {
 
 
-  // we need to handle incoming Serial data as quickly as possible
+  // all we do is handle incoming Serial data as quickly as possible
   while (Serial.available()) { 
    
     // read incoming data
