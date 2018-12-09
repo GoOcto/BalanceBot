@@ -8,18 +8,21 @@
  * 
  * Uses a very simple protocol:
  *
- *  efficient sensor info: (5 chars (bytes) each)
- *  "U" + Accel.asInt16 + Gyros.asInt16  on the X axis
- *  "V" + Accel.asInt16 + Gyros.asInt16  on the Y axis, this is the most important one for balancing
- *  "W" + Accel.asInt16 + Gyros.asInt16  on the Z axis
- *
- *  human readable sensor info: (easier for testing, see below for format) (13 chars (bytes) each)
- *  "X" + human readable Accel data + human readable Gyros data on the X axis
- *  "Y" + human readable Accel data + human readable Gyros data on the Y axis
- *  "Z" + human readable Accel data + human readable Gyros data on the Z axis
- *
- *  - Accel data is multiplied by 1000 so 1 G is roughly 9810 units
- *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
+// *  efficient sensor info: (5 chars (bytes) each)
+// *  "U" + Accel.asInt16 + Gyros.asInt16  on the X axis
+// *  "V" + Accel.asInt16 + Gyros.asInt16  on the Y axis, this is the most important one for balancing
+// *  "W" + Accel.asInt16 + Gyros.asInt16  on the Z axis
+// *
+// *  human readable sensor info: (easier for testing, see below for format) (13 chars (bytes) each)
+// *  "X" + human readable Accel data + human readable Gyros data on the X axis
+// *  "Y" + human readable Accel data + human readable Gyros data on the Y axis
+// *  "Z" + human readable Accel data + human readable Gyros data on the Z axis
+// *
+// *  - Accel data is multiplied by 1000 so 1 G is roughly 9810 units
+// *  - Gyros data is multiplied by 1000 so 1°/sec is 1000 units
+ *  "A±NNNNN" where NNNNN is angle in degrees*100 (eg. 9876 is 98.76°)
+ *  "G±NNNNN" where NNNNN is the gyros value *1000 (eg. 
+
  *  
  *  "M" + humanreadable motor data in Left, Right order (ie. M+200-050 sets the Left motor to forward at a PWM of 200/255 
  *            and the right motor to backward at a PWM of 50/255)
@@ -45,7 +48,8 @@
 
 
 // These parameters may need to be tweaked for calibration
-#define     GEAR_RATIO      120
+#define        GEAR_RATIO   120
+#define ANGLE_CALIBRATION -1500  /* where is up gravity compared to upright phone? */
 #define  ANGLE_RATE_RATIO   180
 #define    ANGLE_RESPONSE    11
 #define DISTANCE_RESPONSE    65  /* 73 */
@@ -88,13 +92,13 @@ char zerosString[MAXLEN] = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0"; // "\0" at end implie
 
 char* inPtr = inputString;
 
-int16_t accelData[3];  // in X, Y, Z axes
-int16_t gyrosData[3];  // in X, Y, Z axes
+int32_t gyrosData;  // on the one important axis
+int32_t angleData;
 
 
 
 // trackers for balancing
-int32_t rad2deg000 = 180000/3.14159265;
+// int32_t rad2deg000 = 180000/3.14159265;
 int32_t angleAccel;
 int32_t angleGyro;
 int32_t risingAngleOffset;
@@ -189,25 +193,34 @@ int16_t Ascii4ToInt(char* str) {
   return n;
 }
 
-// -----------------------------------------------------------------------------------
-void interpretSensorData(int i) {
-  // inputString should be exactly 5 bytes long
-  accelData[i] = ((inputString[1]&0x7f)<<8) + inputString[2];
-  gyrosData[i] = ((inputString[3]&0x7f)<<8) + inputString[4];
+//// -----------------------------------------------------------------------------------
+//void interpretSensorData(int i) {
+//  // inputString should be exactly 5 bytes long
+//  accelData[i] = ((inputString[1]&0x7f)<<8) + inputString[2];
+//  gyrosData[i] = ((inputString[3]&0x7f)<<8) + inputString[4];
+//
+//  if ( inputString[1]&0x80 ) accelData[i] = -accelData[i];
+//  if ( inputString[3]&0x80 ) gyrosData[i] = -gyrosData[i];
+//}
 
-  if ( inputString[1]&0x80 ) accelData[i] = -accelData[i];
-  if ( inputString[3]&0x80 ) gyrosData[i] = -gyrosData[i];
+//// -----------------------------------------------------------------------------------
+//void interpretHumanReadableSensorData(int i) {
+//  // incoming sensor data: Z±AAAAA±GGGGG
+//  accelData[i] = Ascii6ToInt( inputString+1 );
+//  gyrosData[i] = Ascii6ToInt( inputString+7 );
+//}
+
+// -----------------------------------------------------------------------------------
+void interpretAngleData(int i) {
+	angleData = 
 }
 
 // -----------------------------------------------------------------------------------
-void interpretHumanReadableSensorData(int i) {
-  // incoming sensor data: Z±AAAAA±GGGGG
-  accelData[i] = Ascii6ToInt( inputString+1 );
-  gyrosData[i] = Ascii6ToInt( inputString+7 );
+void interpretGyrosData(int i) {
 }
 
 // -----------------------------------------------------------------------------------
-void interpretHumanReadableMotorData() {
+void interpretMotorData() {
   // incoming sensor data: M±AAA±GGG
   int16_t mL = Ascii4ToInt( inputString+1 );
   int16_t mR = Ascii4ToInt( inputString+5 );
@@ -224,35 +237,35 @@ void handleInputString() {
 
     switch ( inputString[0] ) {
 
-      case 'U':
-        interpretSensorData(0);
+      case 'A':
+        interpretAngleData();
         break;
         
-      case 'V':
-        interpretSensorData(1);
+      case 'G':
+        interpretGyrosData();
         doBalanceLoop();
         break;
-        
-      case 'W':
-        interpretSensorData(2);
-        break;
+//        
+//      case 'W':
+//        interpretSensorData(2);
+//        break;
 
       case 'M':
-        interpretHumanReadableMotorData();
+        interpretMotorData();
         break;        
         
-      case 'X':
-        interpretHumanReadableSensorData(0);
-        break;
-        
-      case 'Y':
-        interpretHumanReadableSensorData(1);
-        doBalanceLoop();
-        break;
-        
-      case 'Z':
-        interpretHumanReadableSensorData(2);
-        break;
+//      case 'X':
+//        interpretHumanReadableSensorData(0);
+//        break;
+//        
+//      case 'Y':
+//        interpretHumanReadableSensorData(1);
+//        doBalanceLoop();
+//        break;
+//        
+//      case 'Z':
+//        interpretHumanReadableSensorData(2);
+//        break;
         
       default:
         // these don't need to be fast
@@ -298,7 +311,7 @@ void doResting() {
   rgtD = 0; rgtS = 0;
   motors.setSpeeds(0, 0);
 
-  if ( gyrosData[1]>-60 && gyrosData[1]<60 )
+  if ( gyrosData>-60 && gyrosData<60 )
   {
     // get our actual angle and reset the accumulated gyro
     angleGyro = angleAccel;
@@ -315,15 +328,17 @@ void balanceDrive(int16_t motorL, int16_t motorR) {
 // -----------------------------------------------------------------------------------
 void readSensors() {
 
-  // estimate our actual angle from the only know accelData
-  float ratio = accelData[1]/9810.f;
-  if ( ratio<-1 ) ratio = -1;
-  if ( ratio> 1 ) ratio =  1;
-  angleAccel = acos(ratio)*rad2deg000;
+//  // estimate our actual angle from the only know accelData
+//  float ratio = accelData[1]/9810.f;
+//  if ( ratio<-1 ) ratio = -1;
+//  if ( ratio> 1 ) ratio =  1;
+//  angleAccel = acos(ratio)*rad2deg000;
+
+  angleAccel = angleData + ANGLE_CALIBRATION; // straight across simple conversion
   upright = ( angleAccel>-80000 && angleAccel<80000 );
 
   // an estimated angle based on accumulated gyrosData
-  angleGyro += gyrosData[1];
+  angleGyro += gyrosData;
   angleGyro = angleGyro * 999 / 1000;
 
   static int16_t prevCntL;
@@ -340,12 +355,12 @@ void readSensors() {
   lftD -= driveL;  lftS -= driveL;
   rgtD -= driveR;  rgtS -= driveR;
 
-  risingAngleOffset  = gyrosData[1] * ANGLE_RATE_RATIO + angleGyro;
-  fallingAngleOffset = gyrosData[1] * ANGLE_RATE_RATIO - angleGyro;
+  risingAngleOffset  = gyrosData * ANGLE_RATE_RATIO + angleGyro;
+  fallingAngleOffset = gyrosData * ANGLE_RATE_RATIO - angleGyro;
 
   static char buf[200];
-  snprintf_P(buf,sizeof(buf), PSTR("G, FAO: %06ld  %06ld  %06ld\n"),
-    (long)gyrosData[1], (long)angleGyro, (long)fallingAngleOffset);
+  snprintf_P(buf,sizeof(buf), PSTR("G, FAO: %06ld  %06ld  %06ld"),
+    (long)gyrosData, (long)angleGyro, (long)fallingAngleOffset);
   Serial.println(buf);
   
 }

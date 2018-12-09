@@ -30,6 +30,7 @@ import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.driver.UsbSerialPort
+import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
@@ -45,9 +46,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private var mSerialIoManager: SerialInputOutputManager? = null
     private var mExecutor = Executors.newSingleThreadExecutor()
-
-    lateinit var mBtnLow:View
-    lateinit var mBtnHigh:View
 
     private var mAccel = floatArrayOf(0f,0f,0f)
     private var mGyros = floatArrayOf(0f,0f,0f)
@@ -86,37 +84,29 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             Sensor.TYPE_ACCELEROMETER -> {
                 // event.values[0],[1],[2]
-                // we only need the Y axis
+                // save this info until we read the gyros
                 mAccel = event.values
 
-                // just store it for now, and transmit it with the Gyros data
+
             }
             Sensor.TYPE_GYROSCOPE_UNCALIBRATED -> {
                 // event.values[0],[1],[2]
                 // we only need the Y axis
                 mGyros = event.values
 
-                // Most of the time, we only need to send the Y-axis
+                // the balance algorithm primarily needs the x axis of the gyro
+                // and the angle between y and z of the accelerometer
+                var xGyros = (mGyros[0] * 1000).toInt()
 
-//                var msgX = "U".toByteArray()
-//                msgX += as2Bytes( sensorValueAsInt1000(mAccel[0]) )
-//                msgX += as2Bytes( sensorValueAsInt1000(mGyros[0]) )
-//                protocolSend(msgX)
-//
-                var msgV = "V".toByteArray()
-                msgV += as2Bytes( sensorValueAsInt1000(mAccel[1]) )
-                msgV += as2Bytes( sensorValueAsInt1000(mGyros[1]) )
-                protocolSend(msgV)
-//
-//                var msgZ = "W".toByteArray()
-//                msgZ += as2Bytes( sensorValueAsInt1000(mAccel[2]) )
-//                msgZ += as2Bytes( sensorValueAsInt1000(mGyros[2]) )
-//                protocolSend(msgZ)
+                // calculate an angle from these values and send that via protocol
+                var dAngle = Math.atan2(mAccel[2].toDouble(),mAccel[1].toDouble()) * 180.0 / Math.PI
+                var iAngle = (dAngle*100).toInt()
 
-//                var msgY = "Y".toByteArray()
-//                msgY += asHumanReadable( sensorValueAsInt1000(mAccel[1]) )
-//                msgY += asHumanReadable( sensorValueAsInt1000(mGyros[1]) )
-//                protocolSend(msgY)
+
+                var msg = String.format("A%+06d\nG%+06d",iAngle,xGyros)
+                update_view.text = msg
+                protocolSend(msg)
+
             }
         }
     }
@@ -129,70 +119,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val send = bytes+"\n".toByteArray()
         if ( sPortReady ) {
             try {
-                // it might try to write again, before elgantly closing the port
+                // it might try to write again, before it gets the message that the device has disconnected
                 sPort.write(send, 100)
                 Log.d(TAG, "PROTOCOL SEND: " + send)
             }
             catch(e:Exception) {
                 // don't make a big deal out of it
-                //sPort.close()
             }
         }
     }
 
-    fun sensorValueAsInt1000 (f:Float):Int {
-        return Math.floor( f*1000.0 ).toInt()
-    }
-
-    fun bytesToHex(bytes:ByteArray):String {
-        var out = ""
-        for ( b in bytes ) {
-            out += String.format("%02X ",b)
-        }
-        return out
-    }
-
-    fun asHumanReadable(n:Int):ByteArray {
-        // ±NNNNNN
-        var b = ByteBuffer.allocate(6)
-        var v = 0
-
-        if ( n>=0 ) {
-            b.put( '+'.toByte() )
-            v = n
-        }
-        else {
-            b.put( '-'.toByte() )
-            v = -n
-        }
-
-        b.put( ('0' + (v/10000)%10).toByte() )
-        b.put( ('0' + (v/1000)%10).toByte() )
-        b.put( ('0' + (v/100)%10).toByte() )
-        b.put( ('0' + (v/10)%10).toByte() )
-        b.put( ('0' + (v/1)%10).toByte() )
-
-        return b.array()
-    }
-
-    fun as2Bytes(n:Int):ByteArray {
-        val b = ByteBuffer.allocate(2)
-        val s = if ( n>=0 ) 0x00 else 0x80
-        val v = if ( n>=0 ) n else -n
-        b.put( (s + (v/256).toInt() ).toByte() )
-        b.put( (    (v%256).toInt() ).toByte() )
-        return b.array()
-    }
-
-    fun intAsBytes(n:Int):ByteArray {
-        val b = ByteBuffer.allocate(4)
-        b.putInt(n)
-        return b.array()
-    }
 
     fun checkDevices() {
         val deviceList = mUsbManager.getDeviceList()
-        val textView = findViewById(R.id.text_view) as TextView
+        //val textView = findViewById(R.id.text_view) as TextView
         var foundRobot = false
 
         var Msg = ""
@@ -201,16 +141,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             Log.d(TAG,v.toString())
 
-            // these should probably be moved to the manifest
-            // they're here for now, for development
-            if ( v.vendorId==0x0403 && v.productId==0x6001 ) foundRobot = true // FTDI FT232R UART (OSEPP Micro)
-            if ( v.vendorId==0x10C4 && v.productId==0xEA60 ) foundRobot = true // CP210x UART Bridge (NodeMCU)
-            if ( v.vendorId==0x1ffb && v.productId==0x2300 ) foundRobot = true // Pololu AStar32U4
-            if ( v.vendorId==0x2341 && v.productId==0x0043 ) foundRobot = true // Arduino Uno
+//            // these should probably be moved to the manifest
+//            // they're here for now, for development
+//            if ( v.vendorId==0x0403 && v.productId==0x6001 ) foundRobot = true // FTDI FT232R UART (OSEPP Micro)
+//            if ( v.vendorId==0x10C4 && v.productId==0xEA60 ) foundRobot = true // CP210x UART Bridge (NodeMCU)
+//            if ( v.vendorId==0x1ffb && v.productId==0x2300 ) foundRobot = true // Pololu AStar32U4
+//            if ( v.vendorId==0x2341 && v.productId==0x0043 ) foundRobot = true // Arduino Uno
         }
 
         if ( Msg.length == 0 ) Msg = "No devices found"
-        textView.text = Msg
+        text_view.text = Msg
         Log.d(TAG,Msg)
 
         if ( foundRobot ) startRobotCommunication()
@@ -221,8 +161,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     fun updateReceivedData(data:ByteArray) {
         Log.d("ARDUINO SERIAL RECV",data.toString(Charsets.US_ASCII) )
 
-        findViewById<TextView>(R.id.data_view).append(  data.toString(Charsets.US_ASCII) )
-        findViewById<ScrollView>(R.id.scroll_view).fullScroll(View.FOCUS_DOWN)
+        //findViewById<TextView>(R.id.data_view).append(  data.toString(Charsets.US_ASCII) )
+        //findViewById<ScrollView>(R.id.scroll_view).fullScroll(View.FOCUS_DOWN)
+        data_view.append(  data.toString(Charsets.US_ASCII) )
+        scroll_view.fullScroll(View.FOCUS_DOWN)
     }
 
 
@@ -278,8 +220,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mSerialIoManager = SerialInputOutputManager(sPort, mListener)
             mExecutor.submit(mSerialIoManager)
 
-            mBtnHigh.visibility = View.VISIBLE
-            mBtnLow.visibility = View.VISIBLE
+            button_high.visibility = View.VISIBLE
+            button_low.visibility = View.VISIBLE
 
             sPortReady = true
         }
@@ -293,8 +235,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             mSerialIoManager!!.stop()
             mSerialIoManager = null
 
-            mBtnHigh.visibility = View.INVISIBLE
-            mBtnLow.visibility = View.INVISIBLE
+            button_high.visibility = View.INVISIBLE
+            button_low.visibility = View.INVISIBLE
         }
         if ( sPortReady ) {
             sPort.setDTR(false)
@@ -304,20 +246,31 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
 
+    private fun hideSystemUI() {
+        // for a good description of how these params affect the app
+        // https://developer.android.com/training/system-ui/immersive
+        val decorView = window.decorView
+        decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE or
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        // Hide the nav bar and status bar
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         mUsbManager = getSystemService(Context.USB_SERVICE) as UsbManager
 
-        // see if any devices are already attached
-        // maybe we don't need this if we registered ACTION_USB_DEVICE_ATTACHED in the manifest
-        //checkDevices()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
 
-        mBtnHigh = findViewById(R.id.button_high) as View
-        mBtnLow  = findViewById(R.id.button_low) as View
+        hideSystemUI()
     }
 
 
@@ -325,7 +278,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onResume()
 
         val filter = IntentFilter()
-        //filter.addAction(ACTION_USB_PERMISSION)
         filter.addAction(ACTION_USB_DEVICE_ATTACHED)
         filter.addAction(ACTION_USB_DEVICE_DETACHED)
         registerReceiver(mBroadcastReceiver, filter)
