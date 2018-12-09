@@ -41,6 +41,19 @@
  *  Notice that the first character of each signal is unique.
  */
 
+#include "motors.h"
+
+
+// These parameters may need to be tweaked for calibration
+#define     GEAR_RATIO      120
+#define  ANGLE_RATE_RATIO   180
+#define    ANGLE_RESPONSE    11
+#define DISTANCE_RESPONSE    65  /* 73 */
+#define    SPEED_RESPONSE  3300
+
+// send feedback on the Serial channel
+#define SERIAL_DEBUG  1
+
 
 // Pin Mappings for Motors
 #define MMD   9
@@ -49,7 +62,10 @@
 #define AEN  11
 #define APH  10
 
-// Pin Mappings for Encoders (-EA pin must be able to respond to a CHANGE Interrupt)
+int32_t driveL;
+int32_t driveR;
+
+// Pin Mappings for Encoders (xEA pin must be able to respond to a CHANGE Interrupt)
 #define REA   2
 #define REB   7
 #define LEA   3
@@ -60,6 +76,8 @@ volatile int32_t countR = 0;
 
 
 
+
+// communications/protocol 
 #define MAXLEN 15
 
 char inputString[MAXLEN] = "";
@@ -73,59 +91,10 @@ int16_t accelData[3];  // in X, Y, Z axes
 int16_t gyrosData[3];  // in X, Y, Z axes
 
 
-#define SERIAL_DEBUG  1
 
 
 
-class Motors
-{
-  private:
-    int max = 300;
-  public:
-    Motors();
-    void setLSpeed(int16_t);
-    void setRSpeed(int16_t);
-    void setSpeeds(int16_t,int16_t);
-};
-
-Motors::Motors(void) {
-  pinMode(MMD,OUTPUT);
-  pinMode(AEN,OUTPUT);
-  pinMode(APH,OUTPUT);
-  pinMode(BEN,OUTPUT);
-  pinMode(BPH,OUTPUT);
-  //digitalWrite(MMD,LOW); // selects IN/IN mode
-  digitalWrite(MMD,HIGH); // selects PH/EN mode
-};
-
-void Motors::setLSpeed(int16_t s) {
-  if ( SERIAL_DEBUG ) {
-    Serial.print("LSpeed: ");
-    Serial.println(s);
-  }
-  digitalWrite(APH, (s>0) ? HIGH : LOW );
-  if ( s<0 ) s = -s;
-  if ( s>max ) s = max;
-  analogWrite(AEN,s);
-};
-
-void Motors::setRSpeed(int16_t s) {
-  if ( SERIAL_DEBUG ) {
-    Serial.print("RSpeed: ");
-    Serial.println(s);
-  }
-  digitalWrite(BPH, (s>0) ? HIGH : LOW );
-  if ( s<0 ) s = -s;
-  if ( s>max ) s = max;
-  analogWrite(BEN,s);
-};
-
-void Motors::setSpeeds(int16_t l, int16_t r) {
-  setLSpeed(l);
-  setRSpeed(r);
-};
-
-Motors motors;
+Motors motors(MMD,AEN,APH,BEN,BPH);
 
 int motorSpeed[2];
 
@@ -151,13 +120,10 @@ void doCountR() {
 
 
 
-int32_t testCount = 0;
-int32_t start = 0;
 
 
 
-
-
+// -----------------------------------------------------------------------------------
 void setup() {
   
   Serial.begin(115200);
@@ -168,6 +134,8 @@ void setup() {
   pinMode(REA,INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(LEA),doCountL,CHANGE);
   attachInterrupt(digitalPinToInterrupt(REA),doCountR,CHANGE);
+
+  motors.setSpeeds(0,0);
   
   delay(200);
 
@@ -181,10 +149,10 @@ void setup() {
   Serial.print("Ready to go on pin ");
   Serial.println(ledPin);
 
-  start = millis();
 }
 
 
+// -----------------------------------------------------------------------------------
 int16_t Ascii6ToInt(char* str) {
   // always 6 chars long including the sign
   int16_t n=0;
@@ -199,6 +167,7 @@ int16_t Ascii6ToInt(char* str) {
   return n;
 }
 
+// -----------------------------------------------------------------------------------
 int16_t Ascii4ToInt(char* str) {
   // always 4 chars long including the sign
   int16_t n=0;
@@ -211,6 +180,7 @@ int16_t Ascii4ToInt(char* str) {
   return n;
 }
 
+// -----------------------------------------------------------------------------------
 void interpretSensorData(int i) {
   // inputString should be exactly 5 bytes long
   accelData[i] = ((inputString[1]&0x7f)<<8) + inputString[2];
@@ -220,12 +190,14 @@ void interpretSensorData(int i) {
   if ( inputString[3]&0x80 ) gyrosData[i] = -gyrosData[i];
 }
 
+// -----------------------------------------------------------------------------------
 void interpretHumanReadableSensorData(int i) {
   // incoming sensor data: Z±AAAAA±GGGGG
   accelData[i] = Ascii6ToInt( inputString+1 );
   gyrosData[i] = Ascii6ToInt( inputString+7 );
 }
 
+// -----------------------------------------------------------------------------------
 void interpretHumanReadableMotorData() {
   // incoming sensor data: M±AAA±GGG
   motorSpeed[0] = Ascii4ToInt( inputString+1 );
@@ -233,6 +205,7 @@ void interpretHumanReadableMotorData() {
 }
 
 
+// -----------------------------------------------------------------------------------
 void handleInputString() {
 
     //Serial.print("Proc: (");
@@ -248,7 +221,6 @@ void handleInputString() {
         
       case 'V':
         interpretSensorData(1);
-        testCount++;
         break;
         
       case 'W':
@@ -288,10 +260,17 @@ void handleInputString() {
         
     }
     
-    
 }
 
 
+// -----------------------------------------------------------------------------------
+void balanceDrive(int16_t motorL, int16_t motorR) {
+  driveL = motorL;
+  driveR = motorR;
+}
+
+
+// -----------------------------------------------------------------------------------
 void loop() {
 
 
@@ -319,16 +298,7 @@ void loop() {
       }
     }
 
-    int t = millis()-start;
-    if ( t>5000 ) {
-      int fps = testCount*1000/t;
-      Serial.print("average fps: ");
-      Serial.println(fps);
 
-      testCount = 0;
-      start = millis();
-    }
-    
   }
 
   //Serial.print("counts: ");
