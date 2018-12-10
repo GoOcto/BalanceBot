@@ -9,7 +9,7 @@
  * Uses a very simple protocol:
  *
  *  "A±NNNNN" to send Angle data where NNNNN is angle in degrees*100 (eg. 9876 is 98.76°)
- *  "G±NNNNN" to send Gyros data where NNNNN is the gyros value *1000 (eg. 
+ *  "G±NNNNN" to send Gyros data where NNNNN is the gyros value*1000 (eg. 12345 is 12.345°/sec)
  *  
  *  "M±NNN±NNN" to send Motors data, to be interpretted as a desire to move in a particular way
  *              this is not direct motor control, it tells the balancing algorithm how we'd like to move
@@ -82,7 +82,7 @@ void doCountR() { // called from an pin CHANGE interrupt
 #define MAXLEN 15
 
 char inputString[MAXLEN] = "";
-char zerosString[MAXLEN] = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0"; // "\0" at end implied
+char zerosString[MAXLEN] = { 0 };
 
 char* inPtr = inputString;
 

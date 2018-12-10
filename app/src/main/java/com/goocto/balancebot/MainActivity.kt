@@ -95,7 +95,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                 // the balance algorithm primarily needs the x axis of the gyro
                 // and the angle between y and z of the accelerometer
-                var xGyros = (mGyros[0] * 1000).toInt()
+                var xGyros = (mGyros[0] * 1000 * 180.0/Math.PI).toInt()
 
                 // calculate an angle from these values and send that via protocol
                 var dAngle = Math.atan2(mAccel[2].toDouble(),mAccel[1].toDouble()) * 180.0 / Math.PI
