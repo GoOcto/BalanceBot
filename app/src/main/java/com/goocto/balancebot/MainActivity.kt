@@ -50,6 +50,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var mAccel = floatArrayOf(0f,0f,0f)
     private var mGyros = floatArrayOf(0f,0f,0f)
 
+    private var CALIB_ANGLE_RATE_RATIO   =  180
+    private var CALIB_ANGLE_RESPONSE     =   11
+    private var CALIB_DISTANCE_RESPONSE  =   73
+    private var CALIB_SPEED_RESPONSE     = 3300
+
     val sensorManager: SensorManager by lazy {
         getSystemService(Context.SENSOR_SERVICE) as SensorManager
     }
@@ -171,6 +176,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         // use the first available driver.
         startIoManager(availableDrivers[0])
+
+        // send calibration data
+        var msg = String.format("C%+05d+05d+05d+05d",
+            CALIB_ANGLE_RATE_RATIO,
+            CALIB_ANGLE_RESPONSE,
+            CALIB_DISTANCE_RESPONSE,
+            CALIB_SPEED_RESPONSE  )
+        protocolSend(msg)
     }
 
 

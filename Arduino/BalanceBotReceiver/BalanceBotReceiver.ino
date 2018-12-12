@@ -8,7 +8,7 @@
  * 
  * Uses a very simple protocol:
  *
- *  "A±NNNNN" to send Angle data where NNNNN is angle in degrees*100 (eg. 9876 is 98.76°)
+ *  "A±NNNNN" to send Angle data where NNNNN is angle in degrees*100 (eg. 09876 is 98.76°)
  *  "G±NNNNN" to send Gyros data where NNNNN is the gyros value*1000 (eg. 12345 is 12.345°/sec)
  *  
  *  "M±NNN±NNN" to send Motors data, to be interpretted as a desire to move in a particular way
@@ -30,12 +30,13 @@
 
 
 // These parameters may need to be tweaked for calibration
-#define        GEAR_RATIO   120
-#define ANGLE_CALIBRATION -1500  /* where is up gravity compared to upright phone? */
-#define  ANGLE_RATE_RATIO   180
-#define    ANGLE_RESPONSE    11
-#define DISTANCE_RESPONSE    65  /* 73 */
-#define    SPEED_RESPONSE  3300
+#define     GEAR_RATIO   120
+#define   ANGLE_OFFSET -1500  /* where is up gravity compared to upright phone? */
+
+int32_t CALIB_ANGLE_RATE_RATIO    180
+int32_t CALIB_ANGLE_RESPONSE       11
+int32_t CALIB_DISTANCE_RESPONSE    73
+int32_t CALIB_SPEED_RESPONSE     3300
 
 // send feedback on the Serial channel
 #define SERIAL_DEBUG  1
@@ -79,7 +80,7 @@ void doCountR() { // called from an pin CHANGE interrupt
 
 
 // communications/protocol 
-#define MAXLEN 15
+#define MAXLEN 25
 
 char inputString[MAXLEN] = "";
 char zerosString[MAXLEN] = { 0 };
@@ -176,33 +177,50 @@ void handleInputString() {
       case 'A':
         // incoming angle data: A±NNNNN
         // this is calced in the Android with atan2(accelZ,accelY)*180/PI
-        angleData = AsciiToInt( 5, inputString+1 );
+        angleData = AsciiToInt( 5, inputString + 1 );
         break;
         
+      case 'C':
+        // incoming calibration data: C±NNNN±NNNN±NNNN±NNNN
+        CALIB_ANGLE_RATE_RATIO  = AsciiToInt( 4, inputString + 1 );
+        CALIB_ANGLE_RESPONSE    = AsciiToInt( 4, inputString + 6 );
+        CALIB_DISTANCE_RESPONSE = AsciiToInt( 4, inputString +11 );
+        CALIB_SPEED_RESPONSE    = AsciiToInt( 4, inputString +16 );
+        break;
+
       case 'G':
         // incoming gyros data: G±NNNNN
+        // it is essential that this happens at a regular frequency
         gyrosData = AsciiToInt( 5, inputString+1 );
         doBalanceLoop();
         break;
 
-      case 'M':
-        // incoming motors data: M±NNN±NNN
-        int16_t mL = AsciiToInt( 4, inputString+1 );
-        int16_t mR = AsciiToInt( 4, inputString+5 );
-        balanceDrive(mL,mR);
-        break;        
-        
-      default:
-        // these don't need to be fast
+      case 'H':
+        if ( strcmp(inputString,"HIGH")==0 ) {
+          digitalWrite(LED_BUILTIN, HIGH);
+        }
+        break;
+
+      case 'L':
         if ( strcmp(inputString,"LOW")==0 ) {
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if ( strcmp(inputString,"HIGH")==0 ) {
-          digitalWrite(LED_BUILTIN, HIGH);
+        break;
+
+      case 'M':
+        // incoming motors data: M±NNN±NNN
+        int16_t mL = AsciiToInt( 3, inputString + 1 );
+        int16_t mR = AsciiToInt( 3, inputString + 5 );
+        balanceDrive(mL,mR);
+        break;
+
+      case 'R':
+        if ( strcmp(inputString,"READ")==0 ) {
+          Serial.println("Message acknowledged");
         }
-        else if ( strcmp(inputString,"READ")==0 ) {
-          Serial.println("Message acknowledge");
-        }
+
+      default:
+        // these don't need to be fast
         break;
         
     }
@@ -213,9 +231,9 @@ void handleInputString() {
 void doBalance() {
   
   motorSpeed += (
-    + ANGLE_RESPONSE * risingAngleOffset
-    + DISTANCE_RESPONSE * (lftD+rgtD)
-    + SPEED_RESPONSE * (lftS+rgtS)
+    + CALIB_ANGLE_RESPONSE * risingAngleOffset
+    + CALIB_DISTANCE_RESPONSE * (lftD+rgtD)
+    + CALIB_SPEED_RESPONSE * (lftS+rgtS)
     ) / 100 / GEAR_RATIO;
 
   if (motorSpeed >  255)  motorSpeed =  255;
@@ -252,7 +270,7 @@ void balanceDrive(int16_t motorL, int16_t motorR) {
 // -----------------------------------------------------------------------------------
 void readSensors() {
 
-  angleAccel = angleData + ANGLE_CALIBRATION; // straight across simple conversion
+  angleAccel = angleData + ANGLE_OFFSET; // straight across simple conversion
   upright = ( angleAccel>-80000 && angleAccel<80000 );
 
   // an estimated angle based on accumulated gyrosData
@@ -273,8 +291,8 @@ void readSensors() {
   lftD -= driveL;  lftS -= driveL;
   rgtD -= driveR;  rgtS -= driveR;
 
-  risingAngleOffset  = gyrosData * ANGLE_RATE_RATIO + angleGyro;
-  fallingAngleOffset = gyrosData * ANGLE_RATE_RATIO - angleGyro;
+  risingAngleOffset  = gyrosData * CALIB_ANGLE_RATE_RATIO + angleGyro;
+  fallingAngleOffset = gyrosData * CALIB_ANGLE_RATE_RATIO - angleGyro;
 
   static char buf[200];
   snprintf_P(buf,sizeof(buf), PSTR("G, FAO: %06ld  %06ld  %06ld"),
